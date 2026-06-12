@@ -1,6 +1,6 @@
 /**
  * Minimal LLM API Client
- * Supports OpenAI-compatible / Anthropic-compatible formats
+ * Supports OpenAI-compatible / Anthropic-compatible / MMX CLI formats
  */
 
 import type { LLMConfig } from './llmModels';
@@ -204,8 +204,70 @@ export async function chat(
   if (config.provider === 'anthropic' || config.provider === 'minimax') {
     return chatAnthropic(messages, tools, config);
   }
+  if (config.provider === 'mmx-cli') {
+    return chatMMX(messages, tools, config);
+  }
   return chatOpenAI(messages, tools, config);
 }
+
+// =========================================================================
+// MMX CLI Provider — shells out to `mmx text chat` via /api/mmx-chat
+// =========================================================================
+
+async function chatMMX(
+  messages: ChatMessage[],
+  tools: ToolDef[],
+  config: LLMConfig,
+): Promise<LLMResponse> {
+  const systemMsg = messages.find((m) => m.role === 'system')?.content || '';
+  const nonSystemMessages = messages.filter((m) => m.role !== 'system');
+
+  const body: Record<string, unknown> = {
+    messages: nonSystemMessages,
+    model: config.model,
+    max_tokens: 4096,
+  };
+  if (systemMsg) body.system = systemMsg;
+  if (tools.length > 0) {
+    body.tools = tools;
+  }
+
+  const targetUrl = config.baseUrl || '/api/mmx-chat';
+  logger.info('LLM', 'MMX Request:', { targetUrl, model: config.model, messageCount: messages.length });
+
+  const res = await fetch(targetUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+  logger.info('LLM', 'MMX Response status:', res.status);
+  if (!res.ok) {
+    const text = await res.text();
+    logger.error('LLM', 'MMX Error body:', text.slice(0, 500));
+    throw new Error(`MMX API error ${res.status}: ${text}`);
+  }
+
+  const data = await res.json();
+  logger.info('LLM', 'MMX Response:', JSON.stringify(data).slice(0, 500));
+
+  const choice = data.choices?.[0]?.message;
+  if (!choice) {
+    throw new Error('MMX returned empty response');
+  }
+
+  const parsedInline = extractInlineToolCalls(choice?.content || '');
+  const toolCalls = choice?.tool_calls?.length ? choice.tool_calls : parsedInline.toolCalls;
+
+  return {
+    content: choice?.tool_calls?.length ? stripThinkTags(choice?.content || '') : parsedInline.content,
+    toolCalls,
+  };
+}
+
+// =========================================================================
+// OpenAI-Compatible Provider
+// =========================================================================
 
 async function chatOpenAI(
   messages: ChatMessage[],
@@ -272,6 +334,10 @@ async function chatOpenAI(
     toolCalls,
   };
 }
+
+// =========================================================================
+// Anthropic-Compatible Provider (also used for MiniMax Anthropic endpoint)
+// =========================================================================
 
 async function chatAnthropic(
   messages: ChatMessage[],

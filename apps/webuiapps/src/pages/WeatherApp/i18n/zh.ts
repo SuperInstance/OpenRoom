@@ -1,0 +1,28 @@
+const zh = {
+  weatherApp: '天气',
+  searchPlaceholder: '搜索城市...',
+  search: '搜索',
+  loading: '加载天气数据中...',
+  error: '加载天气数据失败',
+  noResults: '未找到该城市',
+  feelsLike: '体感温度',
+  humidity: '湿度',
+  windSpeed: '风速',
+  pressure: '气压',
+  visibility: '能见度',
+  sunrise: '日出',
+  sunset: '日落',
+  forecast: '5天预报',
+  apiKeyMissing: '未配置 OpenWeatherMap API 密钥。请在 .env 中添加 VITE_OPENWEATHER_API_KEY',
+  currentWeather: '当前天气',
+  celsius: '°C',
+  kmh: '公里/小时',
+  mm: '毫米',
+  hPa: 'hPa',
+  km: '公里',
+  percent: '%',
+  defaultCity: '北京',
+  recentSearches: '最近搜索',
+};
+
+export default zh;

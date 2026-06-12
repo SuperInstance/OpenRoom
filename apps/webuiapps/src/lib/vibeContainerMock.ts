@@ -9,6 +9,7 @@ import i18next from 'i18next';
 import * as idb from './diskStorage';
 import { logger } from './logger';
 import { isReportUserActionsEnabled } from './action';
+import { dispatchAction } from './i2iDispatcher';
 
 // ============ AppLifecycle Enum ============
 
@@ -192,6 +193,9 @@ export async function dispatchAgentAction(action: {
       timestamp_ms: Date.now(),
       trigger_by: 2, // Agent
     };
+
+    // Fire-and-forget: dispatch I2I bottle to the fleet vessel
+    dispatchAction(action.app_id, action.action_type, (action.params as Record<string, unknown>) ?? {});
 
     let resolved = false;
     const timeout = setTimeout(

@@ -1,0 +1,28 @@
+const en = {
+  weatherApp: 'Weather',
+  searchPlaceholder: 'Search city...',
+  search: 'Search',
+  loading: 'Loading weather data...',
+  error: 'Failed to load weather data',
+  noResults: 'City not found',
+  feelsLike: 'Feels like',
+  humidity: 'Humidity',
+  windSpeed: 'Wind',
+  pressure: 'Pressure',
+  visibility: 'Visibility',
+  sunrise: 'Sunrise',
+  sunset: 'Sunset',
+  forecast: '5-Day Forecast',
+  apiKeyMissing: 'OpenWeatherMap API key not configured. Add VITE_OPENWEATHER_API_KEY to .env',
+  currentWeather: 'Current Weather',
+  celsius: '°C',
+  kmh: 'km/h',
+  mm: 'mm',
+  hPa: 'hPa',
+  km: 'km',
+  percent: '%',
+  defaultCity: 'London',
+  recentSearches: 'Recent Cities',
+};
+
+export default en;

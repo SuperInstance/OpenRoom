@@ -4,6 +4,7 @@ export type LLMProvider =
   | 'deepseek'
   | 'llama.cpp'
   | 'minimax'
+  | 'mmx-cli'
   | 'z.ai'
   | 'kimi'
   | 'openrouter';
@@ -97,6 +98,20 @@ export const LLM_PROVIDER_CONFIGS: Record<LLMProvider, ProviderModelConfig> = {
       { id: 'MiniMax-M2.7', name: 'MiniMax M2.7', category: 'flagship' },
       { id: 'MiniMax-M2.7-highspeed', name: 'MiniMax M2.7 Highspeed', category: 'general' },
       { id: 'MiniMax-M2', name: 'MiniMax M2', category: 'general' },
+    ],
+  },
+
+  'mmx-cli': {
+    displayName: 'MMX CLI',
+    baseUrl: '/api/mmx-chat',
+    defaultModel: 'MiniMax-M2.7',
+    models: [
+      { id: 'MiniMax-M2.7', name: 'MiniMax M2.7 (default)', category: 'flagship' },
+      { id: 'MiniMax-M2.7-highspeed', name: 'MiniMax M2.7 Highspeed', category: 'general' },
+      { id: 'MiniMax-M2.5', name: 'MiniMax M2.5', category: 'flagship' },
+      { id: 'MiniMax-M2.5-highspeed', name: 'MiniMax M2.5 Highspeed', category: 'general' },
+      { id: 'MiniMax-M2.1', name: 'MiniMax M2.1', category: 'coding' },
+      { id: 'MiniMax-M2.1-highspeed', name: 'MiniMax M2.1 Highspeed', category: 'coding' },
     ],
   },
 

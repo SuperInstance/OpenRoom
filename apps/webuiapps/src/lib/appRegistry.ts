@@ -148,6 +148,16 @@ const APP_STATIC_REGISTRY: AppStaticDef[] = [
     color: '#FAEA5F',
     defaultSize: { width: 1100, height: 750 },
   },
+  {
+    appId: 15,
+    appName: 'weatherApp',
+    route: '/weatherApp',
+    displayName: 'Weather',
+    sourceDir: 'WeatherApp',
+    icon: 'CloudSun',
+    color: '#1e3a5f',
+    defaultSize: { width: 420, height: 580 },
+  },
 ];
 
 // OS actions are built-in system actions, not from meta.yaml

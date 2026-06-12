@@ -35,6 +35,12 @@ import {
 } from '@/lib/appRegistry';
 import { seedMetaFiles } from '@/lib/seedMeta';
 import { dispatchAgentAction, onUserAction } from '@/lib/vibeContainerMock';
+import { dispatchAction } from '@/lib/i2iDispatcher';
+import {
+  getFleetToolDefinitions,
+  isFleetTool,
+  executeFleetTool,
+} from '@/lib/fleetTools';
 import { closeAllWindows } from '@/lib/windowManager';
 import { getFileToolDefinitions, isFileTool, executeFileTool } from '@/lib/fileTools';
 import { setSessionPath } from '@/lib/sessionPath';
@@ -205,7 +211,18 @@ Rules:
 
 When you receive "[User performed action in ... (appName: xxx)]", the appName is already provided. Read its meta.yaml to understand available actions, then respond accordingly. For games, respond with your own move — think strategically.
 
-IMPORTANT: You MUST use the respond_to_user tool to send all messages to the user. Do NOT output plain text responses. Include your emotion and 3 suggested replies.${hasImageGen ? '\n\nYou can use generate_image to create images from text prompts. The generated image will be displayed in chat.' : ''}`;
+IMPORTANT: You MUST use the respond_to_user tool to send all messages to the user. Do NOT output plain text responses. Include your emotion and 3 suggested replies.${hasImageGen ? '\n\nYou can use generate_image to create images from text prompts. The generated image will be displayed in chat.' : ''}
+
+## Fleet Services Control
+
+You can control fleet services directly via these tools:
+
+- **fleet_status** — Query the current status of all fleet services (MIDI music agents, Ghost Track event tracking, TTS voice, Persona engine). Use this when the user asks about fleet status, system status, or music system health.
+- **play_music** — Play music through the fleet MIDI system. Specify genre/style (e.g. "jazz", "classical", "electronic", "ambient"), optional tempo (BPM), and intensity. This dispatches commands to all MIDI agents.
+- **speak_text** — Speak text aloud through the TTS system (Piper voice). Use for voice responses.
+- **set_volume** — Set music volume from 0.0 (silent) to 1.0 (max).
+
+When the user asks to play music, use play_music with an appropriate genre. When they ask about the system or fleet, use fleet_status. When they ask for voice output, use speak_text.`;
 
   prompt += buildMemoryPrompt(memories);
 
@@ -699,6 +716,9 @@ const ChatPanel: React.FC<{
       const actionMsg = `[User performed action in ${app.displayName} (appName: ${app.appName})] action_type: ${action.action_type}, params: ${JSON.stringify(action.params || {})}`;
       actionQueueRef.current.push(actionMsg);
       processActionQueue();
+
+      // Fire-and-forget: dispatch user action to I2I fleet vessel
+      dispatchAction(action.app_id, action.action_type, (action.params as Record<string, unknown>) ?? {});
     });
     return unsubscribe;
   }, [processActionQueue]);
@@ -759,6 +779,7 @@ const ChatPanel: React.FC<{
       ...getFileToolDefinitions(),
       ...getMemoryToolDefinitions(),
       ...(hasImageGen ? getImageGenToolDefinitions() : []),
+      ...getFleetToolDefinitions(),
     ];
 
     const currentMemories = memoriesRef.current;
@@ -954,6 +975,28 @@ const ChatPanel: React.FC<{
             );
             // Refresh memories for next turn's SP
             loadMemories(sessionPathRef.current).then(setMemories);
+            currentMessages = [
+              ...currentMessages,
+              { role: 'tool', content: result, tool_call_id: tc.id },
+            ];
+          } catch (err) {
+            currentMessages = [
+              ...currentMessages,
+              {
+                role: 'tool',
+                content: `error: ${err instanceof Error ? err.message : String(err)}`,
+                tool_call_id: tc.id,
+              },
+            ];
+          }
+          continue;
+        }
+
+        // ---- Fleet tools ----
+        if (isFleetTool(tc.function.name)) {
+          pendingToolCallsRef.current.push(tc.function.name);
+          try {
+            const result = await executeFleetTool(tc.function.name, params as Record<string, unknown>);
             currentMessages = [
               ...currentMessages,
               { role: 'tool', content: result, tool_call_id: tc.id },
@@ -1293,6 +1336,7 @@ const SettingsModal: React.FC<{
             <option value="deepseek">DeepSeek</option>
             <option value="llama.cpp">llama.cpp</option>
             <option value="minimax">MiniMax</option>
+            <option value="mmx-cli">MMX CLI (MiniMax M2.7)</option>
             <option value="z.ai">Z.ai</option>
             <option value="kimi">Kimi</option>
             <option value="openrouter">OpenRouter</option>

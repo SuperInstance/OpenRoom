@@ -8,9 +8,11 @@ import autoprefixer from 'autoprefixer';
 import { sentryVitePlugin } from '@sentry/vite-plugin';
 import * as fs from 'fs';
 import * as os from 'os';
+import { exec } from 'child_process';
 import { join } from 'path';
 import { generateLogFileName, createLogMiddleware } from './src/lib/logPlugin';
 import { appGeneratorPlugin } from './src/lib/appGeneratorPlugin';
+import { gitSessionPlugin } from './src/lib/gitSessionPlugin';
 
 const LLM_CONFIG_FILE = resolve(os.homedir(), '.openroom', 'config.json');
 const SESSIONS_DIR = resolve(os.homedir(), '.openroom', 'sessions');
@@ -319,6 +321,192 @@ function llmProxyPlugin(): Plugin {
   };
 }
 
+/**
+ * MMX Chat API plugin — invokes `mmx text chat` via CLI.
+ * Accepts POST with { messages, tools, model, temperature, max_tokens }.
+ * Expects MiniMax Messages API format (matching mmx CLI).
+ */
+function mmxChatPlugin(): Plugin {
+  return {
+    name: 'mmx-chat',
+    configureServer(server) {
+      server.middlewares.use('/api/mmx-chat', async (req, res) => {
+        if (req.method !== 'POST') {
+          res.writeHead(405, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Method not allowed' }));
+          return;
+        }
+
+        const chunks: Buffer[] = [];
+        req.on('data', (chunk: Buffer) => chunks.push(chunk));
+        req.on('end', async () => {
+          try {
+            const body = Buffer.concat(chunks).toString();
+            const params = JSON.parse(body);
+            const { messages, tools, model, temperature, max_tokens, system } = params;
+
+            if (!messages || !Array.isArray(messages) || messages.length === 0) {
+              res.writeHead(400, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ error: 'messages array required' }));
+              return;
+            }
+
+            // Build temp file for messages
+            const tmpFile = `/tmp/mmx-chat-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.json`;
+
+            // Convert to MiniMax Messages API format (Anthropic-compatible)
+            const mmxMessages = messages.map((m: any) => {
+              if (m.role === 'system') return { role: 'system', content: m.content };
+              if (m.role === 'tool') {
+                return {
+                  role: 'user',
+                  content: [{ type: 'tool_result', tool_use_id: m.tool_call_id, content: m.content }],
+                };
+              }
+              if (m.role === 'assistant' && m.tool_calls?.length) {
+                const content: any[] = [];
+                if (m.content) content.push({ type: 'text', text: m.content });
+                for (const tc of m.tool_calls) {
+                  content.push({
+                    type: 'tool_use',
+                    id: tc.id,
+                    name: tc.function.name,
+                    input: JSON.parse(tc.function.arguments),
+                  });
+                }
+                return { role: 'assistant', content };
+              }
+              return { role: m.role, content: m.content };
+            });
+
+            // Write messages to temp file
+            fs.writeFileSync(tmpFile, JSON.stringify(mmxMessages), 'utf-8');
+
+            // Build mmx command
+            const mmxArgs = [
+              'text', 'chat',
+              '--messages-file', tmpFile,
+              '--output', 'json',
+              '--max-tokens', String(max_tokens || 4096),
+            ];
+            if (model) {
+              mmxArgs.push('--model', model);
+            }
+            if (temperature !== undefined) {
+              mmxArgs.push('--temperature', String(temperature));
+            }
+
+            // If no explicit system message in the messages array, we may still need it
+            // mmx --system flag for explicit system prompt
+
+            // Convert tools to mmx --tool format
+            if (tools && Array.isArray(tools) && tools.length > 0) {
+              const toolsFile = `/tmp/mmx-tools-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.json`;
+              // mmx expects tools in MiniMax tool format
+              const mmxTools = tools.map((t: any) => ({
+                name: t.function.name,
+                description: t.function.description,
+                input_schema: t.function.parameters,
+              }));
+              fs.writeFileSync(toolsFile, JSON.stringify(mmxTools), 'utf-8');
+              mmxArgs.push('--tool', toolsFile);
+            }
+
+            // Execute mmx
+            const proc = exec('mmx ' + mmxArgs.join(' '), { timeout: 120000 });
+
+            proc.stdout?.on('data', (data: any) => {});
+
+            let stdout = '';
+            let stderr = '';
+
+            proc.stdout?.on('data', (data: any) => { stdout += data.toString(); });
+            proc.stderr?.on('data', (data: any) => { stderr += data.toString(); });
+
+            proc.on('close', (code: number | null) => {
+              // Cleanup temp files
+              try { fs.unlinkSync(tmpFile); } catch {}
+
+              if (code !== 0) {
+                res.writeHead(500, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({
+                  error: 'mmx CLI error',
+                  code,
+                  stderr: stderr.slice(0, 500),
+                }));
+                return;
+              }
+
+              try {
+                const result = JSON.parse(stdout);
+                // Transform MMX response into OpenAI-compatible format
+                // that the frontend can parse
+                const openaiResponse = transformMmxResponse(result, tools);
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify(openaiResponse));
+              } catch (parseErr: any) {
+                res.writeHead(500, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({
+                  error: 'Failed to parse mmx output',
+                  stdout: stdout.slice(0, 1000),
+                  parseError: String(parseErr),
+                }));
+              }
+            });
+          } catch (err: any) {
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: String(err) }));
+          }
+        });
+      });
+    },
+  };
+}
+
+/**
+ * Transform MiniMax Messages API response to OpenAI-compatible format
+ * so the frontend llmClient can parse it uniformly.
+ */
+function transformMmxResponse(mmxResponse: any, tools?: any[]): any {
+  const content = mmxResponse.content || [];
+  let textContent = '';
+  const toolCalls: any[] = [];
+
+  for (const block of content) {
+    if (block.type === 'text') {
+      textContent += block.text;
+    } else if (block.type === 'tool_use') {
+      toolCalls.push({
+        id: block.id,
+        type: 'function',
+        function: {
+          name: block.name,
+          arguments: JSON.stringify(block.input),
+        },
+      });
+    }
+  }
+
+  return {
+    id: mmxResponse.id,
+    model: mmxResponse.model,
+    choices: [
+      {
+        index: 0,
+        message: {
+          role: 'assistant',
+          content: textContent,
+          tool_calls: toolCalls.length > 0 ? toolCalls : undefined,
+        },
+        finish_reason: mmxResponse.stop_reason === 'end_turn'
+          ? (toolCalls.length > 0 ? 'tool_calls' : 'stop')
+          : mmxResponse.stop_reason,
+      },
+    ],
+    usage: mmxResponse.usage,
+  };
+}
+
 /** Generic JSON file persistence plugin factory */
 function jsonFilePlugin(name: string, apiPath: string, filePath: string): Plugin {
   return {
@@ -394,8 +582,10 @@ const config = ({ mode }: ConfigEnv): UserConfigExport => {
   const plugins: PluginOption[] = [
     llmConfigPlugin(),
     sessionDataPlugin(),
+    gitSessionPlugin(),
     logServerPlugin(),
     llmProxyPlugin(),
+    mmxChatPlugin(),
     jsonFilePlugin('characters', '/api/characters', CHARACTERS_FILE),
     jsonFilePlugin('mods', '/api/mods', MODS_FILE),
     appGeneratorPlugin({
