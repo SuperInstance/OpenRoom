@@ -19,7 +19,8 @@
         "test",
         "translation",
         "security",
-        "changeset"
+        "changeset",
+        "mature"
       ]
     ]
   }

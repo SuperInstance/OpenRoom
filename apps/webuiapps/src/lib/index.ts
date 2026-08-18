@@ -89,3 +89,34 @@ export type {
   TagSchema,
   CharacterInfo,
 } from './cardExtractor';
+
+// ============ Room-Elephant (room temperature / zeitgeist) ============
+export {
+  RoomElephant,
+  RoomField,
+  DIAL_NAMES,
+  DIAL_BOUNDS,
+  DIAL_CENTER,
+  EMPTY_ROOM_READINGS,
+  VISION_DEADBAND,
+  roomFieldFromEvents,
+  tintDescription,
+  classify,
+  intentionToReadings,
+  fieldTension,
+  PANIC_HI,
+  JOY_JOKE_HI,
+  JOY_MOOD_HI,
+  JOY_PRESENCE_HI,
+  CLOSE_HOUR_LATE,
+  CLOSE_HOUR_EARLY,
+  CLOSE_WARMTH_LO,
+  CLOSE_VOLUME_LO,
+} from './elephant';
+export type {
+  RoomEvent,
+  RoomIntention,
+  DialName,
+  DialReadings,
+  BodyLanguageMode,
+} from './elephant';
