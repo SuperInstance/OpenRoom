@@ -4,6 +4,8 @@
 
 > The room engine where agents live in found shells — and feel the room's temperature.
 
+<p align="center"><img src="assets/images/hero.jpg" alt="The whole wall one window of apps that open like hatches" width="640"></p>
+
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 
 **[Website](https://www.openroom.ai)** · **[X / Twitter](https://x.com/openroom_ai_)**
